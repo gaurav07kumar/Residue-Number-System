@@ -1,26 +1,35 @@
-module main #(parameter n = 16, parameter N = 51)( x1,x2,x3,x4,X);
+module rns #(parameter n = 8, parameter N = 27)( x1,x2,x3,x4,X);
 
-    input [n-1:0] x1;
-    input [n+1:0] x2;
-    input [n-1:0] x3;
-    input [n:0] x4;
-    output [N+n-1:0] X;
+    // The original is 'X'
+    // Here n = 16, N = 51
+    // we have used four New Moudlui set
+    // Those are:
+    // p1 = 2^(16) = 65536
+    // p2 = 2^(17) + 2^(16) - 1 = 196607
+    // p3 = 2^(16) - 1 = 65535
+    // p4 = 2^(17) - 1 = 131071
+    input [n-1:0] x1; // X mod p1
+    input [n+1:0] x2; // X mod p2
+    input [n-1:0] x3; // X mod p3
+    input [n:0] x4;   // X mod p4
+    output [N+n-1:0] X; // original number
+
 
 
     wire [n+1:0] u1;
     wire [n-1:0] u2;
     wire [n:0] u3;
     wire [n:0] not_x1;
-    INV1 #(n+1) inv1_instance(x1, not_x1);
+    INV1 #(n+1) inv1_instance({1'b0,x1}, not_x1);
 
     M1 M1_instance(x1, x2, u1);
-    M2 #(n,0) M2_instance(x3, not_x1, u2);
+    M2 #(n,0) M2_instance(x3, not_x1[n-1:0], u2);
     M2 #(n+1, 1) M3_instance(x4, not_x1, u3);
 
 
     // wire [n+1:0] not_u1;
     wire [n-1:0] not_g1, not_g2;
-    INV1 #(n) inv2_instance1(u1[n+1:n], not_g2);
+    INV1 #(n) inv2_instance1({{n-2{1'b0}},u1[n+1:n]}, not_g2);
     INV1 #(n) inv2_instance2(u1[n-1:0], not_g1);
 
 
@@ -28,7 +37,7 @@ module main #(parameter n = 16, parameter N = 51)( x1,x2,x3,x4,X);
     // assign not_g1 = not_u1[n-1:0];
 
     wire [n:0] not_h1, not_h2;
-    INV1 #(n+1) inv2_instance3(u1[n+1], not_h2);
+    INV1 #(n+1) inv2_instance3({{n{1'b0}},u1[n+1]}, not_h2);
     INV1 #(n+1) inv2_instance4(u1[n:0], not_h1);
     // assign not_h2 = not_u1[n+1];
     // assign not_h1 = not_u1[n:0];
@@ -48,7 +57,7 @@ module main #(parameter n = 16, parameter N = 51)( x1,x2,x3,x4,X);
     INV1 #(n+1) inv3_instance(v2, not_v2);
 
     wire [n:0] w1;
-    M2 #(n+1, 1) M6_instance(v1, not_v2, w1);
+    M2 #(n+1, 1) M6_instance({1'b0,v1}, not_v2, w1);
 
     wire [N-1:0] XH1, not_XH2, not_XH3, XH4, XH;
     assign XH1 = {w1,v1,u1};
@@ -65,14 +74,15 @@ module main #(parameter n = 16, parameter N = 51)( x1,x2,x3,x4,X);
 
 endmodule
 
-module INV1 #(parameter n = 16)(
+module INV1 #(parameter n = 8)(
     input [n-1:0] x1,
     output [n-1:0] not_x1
 );
+    // Simple 1's complement
     assign not_x1 = ~x1;
 endmodule
 
-module M1 #(parameter n=16)(
+module M1 #(parameter n=8)(
     // x1 is in range [0, 2^n - 1]
     // x2 is n
     input [n-1 : 0] x1,
@@ -111,26 +121,28 @@ module B1 #(parameter n=8) (
 endmodule
 
 module B2 #(parameter n=8) (
-    input [n+1:0] x,
-    output [n+1:0] y
-);
-    assign y[n-1:0] = ~x[n-1:0];
-    assign y[n] = x[n];
-    assign y[n+1] = ~(x[n+1] | x[n]);
-
-endmodule
-
-module B3 #(parameter n=8) (
-    input [n+1:0] x,
+    input [n-1:0] x,
     output [n+1:0] y
 );
     wire [n+1:0] w;
-    assign w[n+1:0] = {x[n:0],1'b0};
+    assign w[n+1:0] = {1'b0,x[n-1:0],1'b0};
     assign y[n-1:0] = ~w[n-1:0];
     assign y[n] = w[n];
     assign y[n+1] = ~(w[n+1] | w[n]);
-
 endmodule
+
+module B3 #(parameter n=8) (
+    input [n-1:0] x,
+    output [n+1:0] y
+);
+    wire [n+1:0] w;
+    assign w = {2'b00, x};
+    assign y[n-1:0] = ~w[n-1:0];
+    assign y[n] = w[n];
+    assign y[n+1] = ~(w[n+1] | w[n]);
+endmodule
+
+
 
 module B4 #(parameter n=8)(
     input [n+1:0] Q, R, T,
@@ -155,7 +167,8 @@ module B4 #(parameter n=8)(
 endmodule
 
 
-module B6 #(parameter n = 8)(
+
+module B6 #(parameter n = 16)(
     input [n+1:0] A, B,
     output wire [n+1:0] S
 );
@@ -171,8 +184,9 @@ module B6 #(parameter n = 8)(
             carry[i+1] = (A[i] & B[i]) | (B[i] & carry[i]) | (A[i] & carry[i]);
         end
     end
-    wire feedback;
-    assign feedback = carry[n+2] | (s[n+1] & s[n]);
+    wire feedback, unique;
+    assign unique = s[n+1] & (~s[n]) & (&s[n-1:0]);
+    assign feedback = carry[n+2] | (s[n+1] & s[n]) | unique;
 
     wire [n+1:0] correction_value;
     // Create the correction value: 
@@ -186,10 +200,9 @@ endmodule
 
 
 
-module M2 #(parameter k = 16, parameter m = 1)(
-    input [k-1:0] x3, not_x1,
-    output [k-1:0] u2
-);
+module M2 #(parameter k = 16, parameter m = 0)(x3, not_x1, u2);
+    input [k-1:0] x3, not_x1;
+    output reg [k-1:0] u2;
     // u2 = [(x3 - x1) * k2] mod P3
 
     // Modulo (2^k -1) multiplication of a residue x by 2^m is equivalent to express x in k-bit binary representation and then circularly left shift it by m-bits.
@@ -198,20 +211,23 @@ module M2 #(parameter k = 16, parameter m = 1)(
     // so, u2 = [x3 + 1's complement of x1] mod P3
     // so, u2 = [x3 + not_x1] mod P3
 
-    wire [k:0]   sum_stage1; // n+1 bits to capture the first carry
-
-    // --- Stage 1: Standard Addition ---
-    // Computes x3 + ~x1. 
-    // sum_stage1[k] is the Carry Out.
-    // sum_stage1[k-1:0] is the intermediate Sum.
-    assign sum_stage1 = x3 + not_x1;
-
-    // --- Stage 2: End-Around Carry ---
-    // Add the carry bit (sum_stage1[k]) back to the LSB.
-    // Note: This second addition will NEVER generate a carry out.
-    wire [k-1:0] sum_stage2;
-    assign sum_stage2 = sum_stage1[k-1:0] + sum_stage1[k];
-    assign u2 = (sum_stage2 << m) | (sum_stage2 >> (k - m));
+    reg [k:0]   sum_stage1; // n+1 bits to capture the first carry
+    reg [k-1:0] sum_stage2;
+    always @(*) begin
+        // --- Stage 1: Standard Addition ---
+        // Computes x3 + ~x1. 
+        // sum_stage1[k] is the Carry Out.
+        // sum_stage1[k-1:0] is the intermediate Sum.
+        sum_stage1 = x3 + not_x1;
+        // --- Stage 2: End-Around Carry ---
+        // Add the carry bit (sum_stage1[k]) back to the LSB.
+        // Note: This second addition will NEVER generate a carry out.
+        sum_stage2 = sum_stage1[k-1:0] + sum_stage1[k];
+        if(&sum_stage2[k-1:0])begin
+            u2 = 0;
+        end
+        else u2 = (sum_stage2 << m) | (sum_stage2 >> (k - m));
+    end
 endmodule
 
 
