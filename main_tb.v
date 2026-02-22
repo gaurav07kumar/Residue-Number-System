@@ -1,71 +1,131 @@
-`timescale 1ns / 1ps
+`timescale 1ns/1ps
 
-module main_test();
-    parameter n = 16;
-    parameter N = 51;
+module rns_tb();
 
+    // ---------------------------------
+    // Parameters (match DUT)
+    // ---------------------------------
+    parameter n = 8;
+    parameter N = 27;
 
-    // 2. Signals
-    // Width is [n+1:0] (10 bits for n=8)
-    reg [n-1:0] x1, x3;
-    reg [n+1:0] x2;
-    reg [n:0] x4;
-    wire [N+n-1:0] X;
+    // ---------------------------------
+    // DUT inputs
+    // ---------------------------------
+    reg  [n-1:0]   r1;
+    reg  [n+1:0]   r2;   // 18 bits
+    reg  [n-1:0]   r3;
+    reg  [n:0]     r4;   // 17 bits
 
-    // 3. Instantiate the Unit Under Test (UUT)
-    main #(.n(n), .N(N)) uut (x1, x2, x3, x4, X);
-    initial begin
-        $dumpfile("wave.vcd");   // file GTKWave reads
-        $dumpvars(0, main_test);        // dump all signals
-    end
+    // ---------------------------------
+    // DUT output
+    // ---------------------------------
+    wire [n+N-1:0] X;
+
+    // Expected output
+    reg  [n+N-1:0] expected_X;
+
+    // File handling
+    integer file_in, file_out;
+    integer scan_in, scan_out;
+    integer csv_file;
+
+    integer test_count  = 0;
+    integer error_count = 0;
+
+    // ---------------------------------
+    // Instantiate DUT
+    // ---------------------------------
+    rns #(
+        .n(n),
+        .N(N)
+    ) dut (
+        .x1(r1),
+        .x2(r2),
+        .x3(r3),
+        .x4(r4),
+        .X(X)
+    );
     
-    // 4. Test Logic
+    // ---------------------------------
+    // Test Process
+    // ---------------------------------
     initial begin
-    //     // Setup output formatting
-    //     $display("---------------------------------------------------------------");
-    //     $display("Testbench for Modulo Adder (n=%0d)", n);
-    //     $display("Expected Modulus = 2^(%0d)  - 1 = %0d", n, (1<<(n))  - 1);
-    //     $display("---------------------------------------------------------------");
-    //     $display("Time |   x3   |   ~x1   |   x3+(~x1)  |  expected  |   y   ");
-    //     $display("-----|-------|--------|-----------------|----------------");
+        // $display("ANMOL High");
+        // Open the NEW binary files created by the Python script
+        file_in  = $fopen("rns_input.txt", "r");
+        file_out = $fopen("expected_output.txt", "r");
 
-        // --- Case 1: 
-        x1=65000; x2=196007; x3=65001; x4=130071;
-        #50;
-    //     check_result(x1, x3,x2,x4,u1,u2,u3);
+        csv_file = $fopen("simulation_results.csv", "w");
+        $fwrite(csv_file, "Test, x1, x2, x3, x4, Expected_X, Output_X, Verdict\n");
+
+        if (file_in == 0) begin
+            $display("ERROR: Cannot open rns_input.txt");
+            $finish;
+        end
+
+        if (file_out == 0) begin
+            $display("ERROR: Cannot open expected_output.txt");
+            $finish;
+        end
 
         
+        $display("========================================");
+        $display("   RNS to Binary Verification Started   ");
+        $display("========================================");
+
+        begin : test_loop
+            while (!$feof(file_in) && !$feof(file_out)) begin
+                
+                // IMPORTANT: Changed %d to %b to read binary!
+                scan_in  = $fscanf(file_in,  "%d %d %d %d", r1, r2, r3, r4);
+                // $display("Debug: scan_in count = %d", scan_in); // Add this
+                scan_out = $fscanf(file_out, "%d", expected_X);
+                // $display("Debug: scan_out count = %d", scan_out); // Add this
+
+            
+                // Safely break if we hit the end of the file or a blank line
+                if (scan_in != 4 || scan_out != 1) begin
+                    disable test_loop; 
+                end
+                // $display("time: %0t", $time);
+                #10;
+                test_count = test_count + 1;
+                $fwrite(csv_file, "%0d, %0d, %0d,%0d,%0d,%0d,%0d,",test_count, r1, r2, r3, r4, expected_X, X );
 
 
-        $display("---------------------------------------------------------------");
+                if (X !== expected_X) begin
+                    $display("Mismatch at test %0d", test_count);
+                    // Printing in both Decimal (%0d) and Hex (%h) for easier debugging
+                    $display("Residues: r1=%0d r2=%0d r3=%0d r4=%0d", r1, r2, r3, r4);
+                    $display("Expected: %d (Deci)", expected_X);
+                    $display("Got     : %d (Deci)", X);
+                    $display("----------------------------------------");
+                    $fwrite(csv_file, "ERROR\n");
+                    error_count = error_count + 1;
+                end
+                else begin
+                    $fwrite(csv_file, "PASS\n");
+                end
+            end
+        end 
+
+        $display("========================================");
+
+        $display("========================================");
+        $display("Total Tests  : %0d", test_count);
+        $display("Total Errors : %0d", error_count);
+
+        if (error_count == 0)
+            $display("ALL TESTS PASSED ✅");
+        else
+            $display("SOME TESTS FAILED ❌");
+
+        $display("========================================");
+
+        $fclose(file_in);
+        $fclose(file_out);
+
         $finish;
     end
-
-    // // Simple task to print and verify results
-    // task check_result;
-    //     input [n-1:0] x1, x3;
-    //     input [n+1:0] x2;
-    //     input [n:0] x4;
-    //     input [n+1:0] u1;
-    //     input [n-1:0] u2;
-    //     input [n:0] u3;
-        
-    //     integer p2, p3, p4;
-    //     integer u1E, u2E, u3E;
-
-    //     begin
-    //         p2 = (1<<(n+1)) + (1<<n) - 1;
-    //         p4 = (1<<(n+1)) -1; 
-    //         p3 = (1<<(n)) -1; 
-            
-    //         u1E = (3*(x2-x1)) % p2;
-    //         u2E = (x3-x1) % p3;
-    //         u3E = (2*(x4-x1)) % p4;
-            
-    //         $display("%4t", $time);
-    //         $display("| %15d | %15d | %15d" ,u1E , u2E, u3E);
-    //         $display("| %15d | %15d | %15d ",u1, u2, u3);
-    //     end
-    // endtask
 
 endmodule
