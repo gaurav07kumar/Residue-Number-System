@@ -61,7 +61,7 @@ module p2 #(parameter n = 8, parameter N = 32) (X, m2);
     head #(n, 2*n) head3(q2, q3, out3);
     
     wire [n+1:0] temp1, temp2;
-    p2adder #(n) p20(q3, out3, temp1);
+    p2adder #(n) p20({2'b00,q3}, out3, temp1);
     p2adder #(n) p21(out2, out1, temp2);
     
     p2adder #(n) p22(temp1, temp2, m2);
