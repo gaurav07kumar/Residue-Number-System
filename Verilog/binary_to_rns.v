@@ -15,6 +15,8 @@
 // Module hierarchy is retained; each submodule is internally behavioral.
 // ===========================================================================
 
+// LUT : 116
+// Delay : 21.943(total), 16.091(logic), 5.852(net)
 module binary_to_rns #(parameter n = 8, parameter N = 32) (X, m1, m2, m3, m4);
     input  [N-1:0] X;
     output [n-1:0] m1;
@@ -32,6 +34,9 @@ endmodule
 // ===========================================================================
 // p1 : X mod 2^n  —  simply the n least-significant bits of X
 // ===========================================================================
+// LUT : 0
+// Delay : 4.305(total) = 3.506(logic) + 0.809(net)
+// WHY THERE IS LOGIC DELAY WHEN THIS IS JUST A WIRE ASSIGNMENT? Because we are using an always @(*) block to implement the combinational logic, which introduces a small amount of logic delay due to the way the Verilog simulator schedules events and evaluates the always block. If we were to implement this as a continuous assignment (e.g., assign m1 = X[n-1:0];), it would be purely combinational with no logic delay, and the output would update immediately with changes in the input. However, using an always block allows for more complex logic if needed in the future, at the cost of introducing a small delay.
 module p1 #(parameter n = 8, parameter N = 32) (X, m1);
     input  [N-1:0] X;
     output reg [n-1:0] m1;
@@ -46,91 +51,57 @@ endmodule
 // p2 : X mod p2  where p2 = 3*2^n - 1
 // Hierarchy retained; submodules (head, mod_p2_adder) are behavioral.
 // ===========================================================================
-module p2 #(parameter n = 8, parameter N = 32) (X, m2);
-    input  [N-1:0] X;
-    output [n+1:0] m2;
+// LUT : 56
+// Delay : 21.943(total) = 16.091(logic) + 5.852(net)
+module p2 #(
+    parameter n = 8,
+    parameter N = 32
+)(
+    input  wire [N-1:0] X,
+    output wire [n+1:0] P
+);
 
-    wire [N-n-1:0] q1;
-    wire [n+1:0] out1;
-    head #(n, N) head1(X, q1, out1);
+    // --------------------------------------------------------
+    // Design-Time Constants
+    // --------------------------------------------------------
+    // M = 3*(2^8) - 1 = 767
+    localparam [n+1:0] M = 3 * (1 << n) - 1;
+    
+    // k = N + 2 = 34. This shift amount guarantees our fractional error 
+    // is small enough that the estimated quotient is off by at most 1.
+    localparam k = N + 2;
+    
+    // MU = floor(2^34 / 767) = 22398786.
+    // We use a 64-bit literal (64'h1) to prevent the Verilog compiler 
+    // from overflowing its internal 32-bit integers during calculation.
+    localparam [31:0] MU = (64'h1 << k) / M;
 
-    wire [2*n-1:0] q2;
-    wire [n+1:0] out2;
-    head #(n, N-n) head2(q1, q2, out2);
+    // --------------------------------------------------------
+    // Step 1: Estimate the Quotient (q = X * MU >> k)
+    // --------------------------------------------------------
+    // X is 32 bits, MU requires 25 bits. The product requires 57 bits.
+    wire [63:0] X_MU = X * MU; 
+    
+    // Right-shift by k (34 bits) simply by selecting the upper bits.
+    // The quotient for 32-bit X / 767 requires at most 23 bits.
+    wire [22:0] q = X_MU[56:k];
 
-    wire [n-1:0] q3;
-    wire [n+1:0] out3;
-    head #(n, 2*n) head3(q2, q3, out3);
+    // --------------------------------------------------------
+    // Step 2: Calculate the Remainder (r = X - q * M)
+    // --------------------------------------------------------
+    // Even though X and q*M are large, we know mathematically that 
+    // their difference (the remainder) will be close to M (under 1534). 
+    // We can safely truncate the subtraction to 11 bits to save routing.
+    wire [10:0] q_M_trunc = (q * M); 
+    wire [10:0] r = X[10:0] - q_M_trunc;
 
-    wire [n+1:0] temp1, temp2;
-    mod_p2_adder #(n) p20({2'b00, q3}, out3,  temp1);
-    mod_p2_adder #(n) p21(out2, out1, temp2);
-    mod_p2_adder #(n) p22(temp1, temp2, m2);
-endmodule
+    // --------------------------------------------------------
+    // Step 3: Final Conditional Correction
+    // --------------------------------------------------------
+    // If our estimated quotient was underestimated by 1, r will be >= M.
+    // Subtract M once to get the final exact modulo.
+    assign P = (r >= M) ? (r - M) : r;
 
-
-// ===========================================================================
-// head : helper for p2
-//   q   = X[N-1:n] / 3
-//   out = ( (X[N-1:n] % 3) << n  +  X[n-1:0] ) mod p2
-// Hierarchy retained; divide_by3 and mod_p2_adder are behavioral.
-// ===========================================================================
-module head #(parameter n = 8, parameter N = 32) (X, q, out);
-    input  [N-1:0]   X;
-    output [N-n-1:0] q;
-    output [n+1:0]   out;
-
-    wire [1:0] rem;
-
-    divide_by3 #(N-n) div3(X[N-1:n], rem, q);
-    mod_p2_adder #(n)   p0({rem, {n{1'b0}}}, {2'b00, X[n-1:0]}, out);
-endmodule
-
-
-// ===========================================================================
-// divide_by3 : divide N-bit X by 3, producing 2-bit remainder R and N-bit Q
-// Behavioral: for loop implements the MSB-to-LSB chain of bit1_divide3 stages.
-// ===========================================================================
-module divide_by3 #(parameter N = 8) (X, R, Q);
-    input  [N-1:0] X;
-    output reg [1:0]   R;
-    output reg [N-1:0] Q;
-
-    always @(*) begin
-        R = X%3;
-        Q = X/3;
-    end
-endmodule
-
-
-// ===========================================================================
-// mod_p2_adder : (A + B) mod p2   where p2 = 3*2^n - 1
-// Behavioral: replicates the two-stage carry-feedback algorithm exactly.
-//   Stage 1 : {cout1, sum1} = A + B
-//   feedback = cout1 | (sum1[n+1] & sum1[n])
-//   Stage 2 : S = sum1 + feedback*(2^n + 1)  [mod 2^(n+2)]
-// ===========================================================================
-module mod_p2_adder #(parameter n = 8) (A, B, S);
-    input  [n+1:0] A, B;
-    output reg [n+1:0] S;
-
-    // 2^n + 1 is the correction term added when overflow is detected
-    localparam [n+1:0] P2_CORRECTION = (1 << n) + 1;
-
-    reg [n+1:0] sum_stage1;
-    reg cout_stage1, cout_stage2;
-    reg feedback;
-
-    always @(*) begin
-        // Stage 1: standard (n+2)-bit addition
-        {cout_stage1, sum_stage1} = A+B;
-
-        // Overflow when carry out, or when bits [n+1:n] are both 1 (sum >= 3*2^n)
-        feedback = cout_stage1 | (sum_stage1[n+1] & sum_stage1[n]);
-
-        // Stage 2: conditionally add (2^n + 1); result is taken mod 2^(n+2)
-        {cout_stage2, S} = sum_stage1 + (feedback ? P2_CORRECTION : 0);
-    end
 endmodule
 
 
@@ -138,6 +109,8 @@ endmodule
 // p3 : X mod p3   where p3 = 2^n - 1
 // Fully behavioral: CSA-with-EAC and CPA-with-EAC stages are inlined.
 // ===========================================================================
+// LUT : 30
+// Delay : 8.901(total) = 4.745(logic) + 4.156(net)
 module p3 #(parameter n = 8, parameter N = 32) (X, m3);
     input  [N-1:0] X;
     output [n-1:0] m3;
