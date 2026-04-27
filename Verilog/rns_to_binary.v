@@ -1,30 +1,10 @@
-`timescale 1ns / 1ps
-//////////////////////////////////////////////////////////////////////////////////
-// Company: 
-// Engineer: 
-// 
-// Create Date: 02/23/2026 11:00:52 PM
-// Design Name: 
-// Module Name: rns_to_binary
-// Project Name: 
-// Target Devices: 
-// Tool Versions: 
-// Description: 
-// 
-// Dependencies: 
-// 
-// Revision:
-// Revision 0.01 - File Created
-// Additional Comments:
-// 
-//////////////////////////////////////////////////////////////////////////////////
-
-// LUT : 209
-// Delay : 20.714(total), 10.431(logic), 10.283(net)
-module rns_to_binary #(parameter n = 8, parameter N = 27)( x1,x2,x3,x4,X);
+// LUT : 210
+// delay : 22.088(total) = 9.146(logic)+ 12.942(net)
+module rns_to_binary #(parameter n = 8, parameter N = 32)( x1,x2,x3,x4,X);
 
     // The original is 'X'
-    // Here n = 16, N = 51
+    // Here n = 16, N = 32
+
     // we have used four New Moudlui set
     // Those are:
     // p1 = 2^(16) = 65536
@@ -32,85 +12,73 @@ module rns_to_binary #(parameter n = 8, parameter N = 27)( x1,x2,x3,x4,X);
     // p3 = 2^(16) - 1 = 65535
     // p4 = 2^(17) - 1 = 131071
     
+    parameter L = 3*n + 3;
+
     input [n-1:0] x1; // X mod p1
     input [n+1:0] x2; // X mod p2
     input [n-1:0] x3; // X mod p3
     input [n:0] x4;   // X mod p4
-    output [N+n-1:0] X; // original number
-
+    output [L+n-1:0] X; // original number
 
 
     wire [n+1:0] u1;
     wire [n-1:0] u2;
     wire [n:0] u3;
-    reg [n:0] not_x1;
-
-    always @(*) begin
-        not_x1 = ~{1'b0,x1};
-    end
+    wire [n:0] not_x1;
+    INV1 #(n+1) inv1_instance({1'b0,x1}, not_x1);
 
     M1 M1_instance(x1, x2, u1);
     M2 #(n,0) M2_instance(x3, not_x1[n-1:0], u2);
     M2 #(n+1, 1) M3_instance(x4, not_x1, u3);
 
 
-    reg [n-1:0] not_g1, not_g2;
-    reg [n:0] not_h1, not_h2;
+    // wire [n+1:0] not_u1;
+    wire [n-1:0] not_g1, not_g2;
+    INV1 #(n) inv2_instance1({{n-2{1'b0}},u1[n+1:n]}, not_g2);
+    INV1 #(n) inv2_instance2(u1[n-1:0], not_g1);
 
-    always @(*) begin
-        not_g2 = ~{{n-2{1'b0}},u1[n+1:n]};
-        not_g1 = ~u1[n-1:0];
 
-        not_h2 = ~{{n{1'b0}},u1[n+1]};
-        not_h1 = ~u1[n:0];
-    end
+    wire [n:0] not_h1, not_h2;
+    INV1 #(n+1) inv2_instance3({{n{1'b0}},u1[n+1]}, not_h2);
+    INV1 #(n+1) inv2_instance4(u1[n:0], not_h1);
 
 
     wire [n-1:0] y1, y2;
-    csaWithEAC #(n) csaWithEAC_instance1(not_g1, not_g2, u2, y1, y2);
+    csa_with_eac #(n) csaWithEAC_instance1(not_g1, not_g2, u2, y1, y2);
     wire [n:0] z1, z2;
-    csaWithEAC #(n+1) csaWithEAC_instance2(not_h1, not_h2, u3, z1, z2);
+    csa_with_eac #(n+1) csaWithEAC_instance2(not_h1, not_h2, u3, z1, z2);
 
     wire [n-1:0] v1;
     wire [n:0] v2; 
     M2 #(n,n-1) M4_instance(y1, y2, v1);
     M2 #(n+1,1) M5_instance(z1, z2, v2);
 
-    reg [n:0] not_v2;
-    always @(*) begin
-        not_v2 = ~v2;
-    end
+    wire [n:0] not_v2;
+    INV1 #(n+1) inv3_instance(v2, not_v2);
 
     wire [n:0] w1;
     M2 #(n+1, 1) M6_instance({1'b0,v1}, not_v2, w1);
 
-    wire [N-1:0] XH1, not_XH2, not_XH3, XH4;
+    wire [L-1:0] XH1, not_XH2, not_XH3, XH4, XH;
     assign XH1 = {w1,v1,u1};
     assign not_XH2 = {2'b11,~{w1, v1, v1}};
     assign not_XH3 = {{n{1'b1}},~{w1,{n+2{1'b0}}}};
     assign XH4 = {{n{1'b0}},{n{1'b0}},2'b00,w1};
 
-    wire [N-1:0] s1,c1,s2,c2;
-    
-    csa #(N) M8_instance(XH1, not_XH2, not_XH3, s1, c1);
-    csa #(N) M9_instance(s1, c1, XH4, s2, c2);
+    wire [L-1:0] s1,c1,s2,c2;
+    csa #(L) M8_instance(XH1, not_XH2, not_XH3, s1, c1);
+    csa #(L) M9_instance(s1, c1, XH4, s2, c2);
 
-    reg [N-1:0] XH;
-    always @(*) begin
-        XH = s2 + c2;
-    end
+    cpa #(L) M10_instance(s2, c2, XH);
     assign X = {XH, x1};
-
 endmodule
 
 module INV1 #(parameter n = 8)(
     input [n-1:0] x1,
-    output reg [n-1:0] not_x1
+    output [n-1:0] not_x1
 );
     // Simple 1's complement
-    always @(*) begin
-        not_x1 = ~x1;
-    end
+    assign not_x1 = ~x1;
 endmodule
 
 module M1 #(parameter n=8)(
@@ -143,89 +111,88 @@ endmodule
 
 module B1 #(parameter n=8) (
     input [n+1:0] x,
-    output reg [n+1:0] y
+    output [n+1:0] y
 );
-    always @(*) begin
-        y[0] = x[n+1] | (x[n] & x[n-1]);
-        y[n-1:1] = x[n-2:0];
-        y[n] = x[n-1] ^ y[0];
-        y[n+1] = x[n] ^ (x[n-1] & y[0]);
-    end
+    assign y[0] = x[n+1] | (x[n] & x[n-1]);
+    assign y[n-1:1] = x[n-2:0];
+    assign y[n] = x[n-1] ^ y[0];
+    assign y[n+1] = x[n] ^ (x[n-1] & y[0]);
 endmodule
 
 module B2 #(parameter n=8) (
     input [n-1:0] x,
-    output reg[n+1:0] y
+    output [n+1:0] y
 );
-    reg [n+1:0] w;
-    always @(*) begin
-        w = {2'b0,x};
-        y[n-1:0] = ~w[n-1:0];
-        y[n] = w[n];
-        y[n+1] = ~(w[n+1] | w[n]);
-    end
+    wire [n+1:0] w;
+    assign w[n+1:0] = {1'b0,x[n-1:0],1'b0};
+    assign y[n-1:0] = ~w[n-1:0];
+    assign y[n] = w[n];
+    assign y[n+1] = ~(w[n+1] | w[n]);
 endmodule
 
 module B3 #(parameter n=8) (
     input [n-1:0] x,
-    output reg[n+1:0] y
+    output [n+1:0] y
 );
-    reg [n+1:0] w;
-    always @(*) begin
-        w = {1'b0,x,1'b0};
-        y[n-1:0] = ~w[n-1:0];
-        y[n] = w[n];
-        y[n+1] = ~(w[n+1] | w[n]);
-    end
+    wire [n+1:0] w;
+    assign w = {2'b00, x};
+    assign y[n-1:0] = ~w[n-1:0];
+    assign y[n] = w[n];
+    assign y[n+1] = ~(w[n+1] | w[n]);
 endmodule
 
 
 
 module B4 #(parameter n=8)(
     input [n+1:0] Q, R, T,
-    output reg[n+1:0] A, B
+    output [n+1:0] A, B
 );
-    reg [n+1:0] s;
-    reg [n+2:0] c;
-    
-    always @(*) begin
-        s = Q ^ R ^ T;
-        c[0] = 0;
-        c[n+2:1] = (Q & R) | (R & T) | (T & Q);
+    wire [n+1:0] s;
+    wire [n+2:0] c;
 
-        A[n-1:0] = s[n-1:0];
-        A[n] = s[n] ^ (s[n+1] & s[n]);
-        A[n+1] = s[n+1] ^ (s[n+1] & s[n]);
-        B[0] = c[n+2] | (c[n+1] & c[n]) | (s[n+1] & s[n]);
-        B[n-1:1] = c[n-1:1];
-        B[n] = c[n] ^ (c[n+2] | (c[n+1] & c[n]));
-        B[n+1] = c[n+1] ^ (c[n] & (c[n+2] | (c[n+1] & c[n])));
-    end
+    assign s = Q ^ R ^ T;
+    assign c[0] = 0;
+    assign c[n+2:1] = (Q & R) | (R & T) | (T & Q);
+
+    assign A[n-1:0] = s[n-1:0];
+    assign A[n] = s[n] ^ (s[n+1] & s[n]);
+    assign A[n+1] = s[n+1] ^ (s[n+1] & s[n]);
+
+    assign B[0] = c[n+2] | (c[n+1] & c[n]) | (s[n+1] & s[n]);
+    assign B[n-1:1] = c[n-1:1];
+    assign B[n] = c[n] ^ (c[n+2] | (c[n+1] & c[n]));
+    assign B[n+1] = c[n+1] ^ (c[n] & (c[n+2] | (c[n+1] & c[n])));
+
 endmodule
 
 
 
-module B6 #(parameter n = 8) (A, B, S);
-    input  [n+1:0] A, B;
-    output reg [n+1:0] S;
+module B6 #(parameter n = 16)(
+    input [n+1:0] A, B,
+    output wire [n+1:0] S
+);
+    reg [n+1:0] s;
+    reg [n+2:0] carry;
+    // wire w1, w2;
 
-    // 2^n + 1 is the correction term added when overflow is detected
-    localparam [n+1:0] P2_CORRECTION = (1 << n) + 1;
-
-    reg [n+1:0] sum_stage1;
-    reg cout_stage1, cout_stage2;
-    reg feedback;
-
+    integer i;
     always @(*) begin
-        // Stage 1: standard (n+2)-bit addition
-        {cout_stage1, sum_stage1} = A+B;
-
-        // Overflow when carry out, or when bits [n+1:n] are both 1 (sum >= 3*2^n)
-        feedback = cout_stage1 | (sum_stage1[n+1] & sum_stage1[n]);
-
-        // Stage 2: conditionally add (2^n + 1); result is taken mod 2^(n+2)
-        {cout_stage2, S} = sum_stage1 + (feedback ? P2_CORRECTION : 0);
+        carry[0] = 1'b0;
+        for(i=0 ; i<=n+1 ; i=i+1)begin
+            s[i] = A[i] ^ B[i] ^ carry[i];
+            carry[i+1] = (A[i] & B[i]) | (B[i] & carry[i]) | (A[i] & carry[i]);
+        end
     end
+    wire feedback, unique;
+    assign unique = s[n+1] & (~s[n]) & (&s[n-1:0]);
+    assign feedback = carry[n+2] | (s[n+1] & s[n]) | unique;
+
+    wire [n+1:0] correction_value;
+    // Create the correction value: 
+    // If feedback is 1, set bit '0' and bit 'n' to 1. Otherwise 0.
+    assign correction_value = feedback ? ((1'b1 << n) | 1'b1) : 0;
+    // Final Sum: Add the correction to the raw sum
+    assign S = s + correction_value;
 endmodule
 
 
@@ -265,10 +232,10 @@ endmodule
 
 
 
-module csa #(parameter n = 16)(a,b,c,sum,carry);
-    input [n-1:0] a,b,c;
-    output [n-1:0] sum, carry;
-
+module csa #(parameter n = 16)(
+    input [n-1:0] a,b,c,
+    output [n-1:0] sum, carry
+);
     wire [n:0] raw_carry;
     assign raw_carry[0] = 1'b1;
     assign sum = a ^ b ^ c;
@@ -276,19 +243,19 @@ module csa #(parameter n = 16)(a,b,c,sum,carry);
     assign carry = raw_carry[n-1:0];
 endmodule
 
-module csaWithEAC #(parameter n = 8)(a,b,c,sum, carry); // n-bit Carry Save Adder with End-Around Carry
-    input [n-1:0] a,b, c;
-    output reg [n-1:0] sum, carry;
-
-    reg [n-1:0] raw_carry;
-    reg [n-1:0] s1, c1, c2, c3;
-
-    // sum = a ^ b ^ cin
-    // carry = (a . b) + (b . cin) + (a . cin)
-    always @(*) begin
-        sum = a ^ b ^ c; 
-        raw_carry = (a & b) | (b & c) | (a & c);
-        carry = {raw_carry[n-2:0], raw_carry[n-1]}; // End-Around Carry: rotate left by 1
-    end
+module csa_with_eac #(parameter n = 8)(
+    input [n-1:0] a,b, c,
+    output [n-1:0] sum, carry
+);
+    wire [n-1:0] raw_carry;
+    assign sum = a ^ b ^ c;
+    assign raw_carry = (a&b) | (b&c) | (c&a);
+    assign carry = {raw_carry[n-2:0], raw_carry[n-1]};
 endmodule
 
+module cpa #(parameter n=16)(
+    input [n-1:0] a,b,
+    output [n-1:0] sum
+);
+    assign sum = a+b;
+endmodule

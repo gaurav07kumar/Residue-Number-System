@@ -28,7 +28,8 @@ module rns_to_binary_tb();
     // Parameters (match DUT)
     // ---------------------------------
     parameter n = 8;
-    parameter N = 27;
+    parameter L = 27;
+    parameter N = 32;
 
     // ---------------------------------
     // DUT inputs
@@ -41,10 +42,10 @@ module rns_to_binary_tb();
     // ---------------------------------
     // DUT output
     // ---------------------------------
-    wire [n+N-1:0] X;
+    wire [n+L-1:0] X;
 
     // Expected output
-    reg  [n+N-1:0] expected_X;
+    reg  [n+L-1:0] expected_X;
 
     // File handling
     integer file_in, file_out;

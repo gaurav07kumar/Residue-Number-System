@@ -12,7 +12,7 @@ module test_tb;
     reg oper;
 
     // Output from DUT
-    wire [N-1:0] result;
+    wire [N+2:0] result;
 
     // Testbench file I/O variables
     integer file_in;
@@ -24,7 +24,7 @@ module test_tb;
     reg [23:0] oper_str; // Holds "ADD" or "MUL" for clean CSV formatting
 
     // Instantiate the Unit Under Test (UUT)
-    test #(n, N) uut (
+    top_module #(n, N) uut (
         .a(a), 
         .b(b), 
         .oper(oper),
@@ -47,7 +47,7 @@ module test_tb;
         // Process the file line by line
         while (!$feof(file_in)) begin
             // Read A, B, and the operation flag
-            scan_status = $fscanf(file_in, "%d %d %d\n", a, b, oper);
+            scan_status = $fscanf(file_in, "%b %b %b\n", a, b, oper);
             
             if (scan_status == 3) begin
                 // Wait 10ns for the combinational logic to propagate
@@ -67,6 +67,7 @@ module test_tb;
                     $fdisplay(file_out, "%t,%s,%d,%d,%d,%d,PASS", $time, oper_str, a, b, expected_res[N-1:0], result);
                 end else begin
                     $fdisplay(file_out, "%t,%s,%d,%d,%d,%d,FAIL", $time, oper_str, a, b, expected_res[N-1:0], result);
+                    $display("Test failed at time %t: %s %d and %d expected %d but got %d", $time, oper_str, a, b, expected_res[N-1:0], result);
                 end
             end
         end
